@@ -39,6 +39,8 @@ namespace Vintagestory.GameContent
     {
         EntityBehaviorVillagerInv ebhv;
         private HumanoidOutfits humanoidOutfits;
+        private TexturedWeightedCompositeShape[] cachedCShapes;
+        private readonly Dictionary<AssetLocation, CompositeTexture> cachedTextures = new();
 
         public override ItemSlot RightHandItemSlot => ebhv?.Inventory[0];
         public override ItemSlot LeftHandItemSlot => ebhv?.Inventory[1];
@@ -80,6 +82,8 @@ namespace Vintagestory.GameContent
         public void LoadOutfitCodes()
         {
             if (Api.Side != EnumAppSide.Server) return;
+            cachedCShapes = null;
+            cachedTextures.Clear();
 
             WatchedAttributes.SetInt("outfitversion", Properties.Attributes["outfitversion"].AsInt(0));
 
@@ -120,6 +124,8 @@ namespace Vintagestory.GameContent
 
         private void onOutfitsChanged()
         {
+            cachedCShapes = null;
+            cachedTextures.Clear();
             MarkShapeModified();
         }
 
@@ -141,7 +147,14 @@ namespace Vintagestory.GameContent
             entityShape = newShape;
 
             string[] outfitCodes = OutfitCodes;
-            TexturedWeightedCompositeShape[] cshapes = humanoidOutfits.Outfit2Shapes(OutfitConfigFileName, OutfitCodes);
+            if (outfitCodes == null || outfitCodes.Length == 0)
+            {
+                bool c = true;
+                base.OnTesselation(ref entityShape, shapePathForLogging, ref c);
+                return;
+            }
+
+            TexturedWeightedCompositeShape[] cshapes = cachedCShapes ??= humanoidOutfits.Outfit2Shapes(OutfitConfigFileName, outfitCodes);
 
             var slots = OutfitSlots;
 
@@ -169,6 +182,7 @@ namespace Vintagestory.GameContent
 
             for (int i = 0; i < outfitCodes.Length; i++)
             {
+                if (i >= cshapes.Length) break;
                 var twcshape = cshapes[i];
                 if (twcshape == null) continue;
 
@@ -205,11 +219,13 @@ namespace Vintagestory.GameContent
         /// <returns></returns>
         private CompositeTexture CreateCompositeTexture(AssetLocation loc, ICoreClientAPI capi, SourceStringComponents sourceForLogging)
         {
+            if (cachedTextures.TryGetValue(loc, out var cached)) return cached;
+
             var cmpt = new CompositeTexture(loc);
             cmpt.Bake(capi.Assets);
             capi.EntityTextureAtlas.GetOrInsertTexture(new AssetLocationAndSource(cmpt.Baked.TextureFilenames[0], sourceForLogging), out int textureSubid, out _);
             cmpt.Baked.TextureSubId = textureSubid;
-            return cmpt;
+            return cachedTextures[loc] = cmpt;
         }
 
 
